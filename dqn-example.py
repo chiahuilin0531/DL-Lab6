@@ -63,6 +63,7 @@ class DQN:
         # initialize target network
         ## <TODO ##
         self._target_net.load_state_dict(self._behavior_net.state_dict())
+        self.criterion = nn.MSELoss(reduction='mean')
         ## TODO> ##
         self._optimizer = optim.Adam(self._behavior_net.parameters(), lr=args.lr)
         # raise NotImplementedError
@@ -79,7 +80,7 @@ class DQN:
 
     def select_action(self, state, epsilon, action_space):
         '''epsilon-greedy based on behavior network'''
-         ## TODO ##
+         ## <TODO ##
         if epsilon < random.random():
             action = np.random.randint(0, action_space.n)
         else:
@@ -87,6 +88,7 @@ class DQN:
             pred = self._behavior_net(state).detach().cpu()
             action = np.argmax(np.array(pred), axis=1).item(0)
         return action
+         ## TODO> ##
 
         # raise NotImplementedError
 
@@ -104,15 +106,20 @@ class DQN:
         # sample a minibatch of transitions
         state, action, reward, next_state, done = self._memory.sample(
             self.batch_size, self.device)
+        
+        batch_size = state.shape[0]
 
-        ## TODO ##
-        # q_value = ?
-        # with torch.no_grad():
-        #    q_next = ?
-        #    q_target = ?
-        # criterion = ?
-        # loss = criterion(q_value, q_target)
-        raise NotImplementedError
+        ## <TODO ##
+        q_value = self._behavior_net(state).gather(1, action.long())
+        
+        with torch.no_grad():
+           q_next = self._target_net(next_state).detach()
+           q_target = reward + gamma * q_next.max(1)[0] * (1-done)
+        loss = self.criterion(q_value, q_target)
+        ## TODO> ##
+
+        # raise NotImplementedError
+
         # optimize
         self._optimizer.zero_grad()
         loss.backward()
@@ -121,8 +128,10 @@ class DQN:
 
     def _update_target_network(self):
         '''update target network by copying from behavior network'''
-        ## TODO ##
-        raise NotImplementedError
+        ## <TODO ##
+        self._target_net.load_state_dict(self._behavior_net.state_dict())
+        ## TODO> ##
+        # raise NotImplementedError
 
     def save(self, model_path, checkpoint=False):
         if checkpoint:
@@ -186,6 +195,8 @@ def train(args, env, agent, writer):
 
 def test(args, env, agent, writer):
     print('Start Testing')
+    # if args.render:
+    #     env.render()
     action_space = env.action_space
     epsilon = args.test_epsilon
     seeds = (args.seed + i for i in range(10))
@@ -196,10 +207,18 @@ def test(args, env, agent, writer):
         state = env.reset()
         ## TODO ##
         # ...
-        #     if done:
-        #         writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
+        for _ in range(args.test_round):
+            action = agent.select_action(state, epsilon, action_space)
+            next_state, reward, done, _ = env.step(action)
+            total_reward += reward
+            state = next_state
+            if done:
+                rewards.append(total_reward)
+                writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
+                print('Test/Episode Reward', total_reward, n_episode)
+                break
         #         ...
-        raise NotImplementedError
+        # raise NotImplementedError
     print('Average Reward', np.mean(rewards))
     env.close()
 
@@ -227,6 +246,7 @@ def main():
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--seed', default=20200519, type=int)
     parser.add_argument('--test_epsilon', default=.001, type=float)
+    parser.add_argument('--test_round', default=1000, type=int)
     args = parser.parse_args()
 
     ## main ##
