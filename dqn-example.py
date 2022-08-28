@@ -7,6 +7,7 @@ import itertools
 import random
 import time
 
+import os
 import gym
 import numpy as np
 import torch
@@ -81,7 +82,7 @@ class DQN:
     def select_action(self, state, epsilon, action_space):
         '''epsilon-greedy based on behavior network'''
          ## <TODO ##
-        if epsilon < random.random():
+        if random.random() < epsilon:
             action = np.random.randint(0, action_space.n)
         else:
             state = torch.tensor(state.reshape(1, -1)).to(self.device)
@@ -114,7 +115,7 @@ class DQN:
         
         with torch.no_grad():
            q_next = self._target_net(next_state).detach()
-           q_target = reward + gamma * q_next.max(1)[0] * (1-done)
+           q_target = reward + gamma * q_next.max(1, True)[0] * (1-done)
         loss = self.criterion(q_value, q_target)
         ## TODO> ##
 
@@ -159,6 +160,7 @@ def train(args, env, agent, writer):
     action_space = env.action_space
     total_steps, epsilon = 0, 1.
     ewma_reward = 0
+    best_reward = -np.inf
     for episode in range(args.episode):
         total_reward = 0
         state = env.reset()
@@ -190,6 +192,13 @@ def train(args, env, agent, writer):
                     .format(total_steps, episode, t, total_reward, ewma_reward,
                             epsilon))
                 break
+        
+        if total_steps >= args.warmup:
+            if best_reward < total_reward:
+                best_reward = total_reward
+                agent.save(os.path.join(args.logdir, args.best_model))
+            
+    print("best reward:", best_reward)
     env.close()
 
 
@@ -205,9 +214,9 @@ def test(args, env, agent, writer):
         total_reward = 0
         env.seed(seed)
         state = env.reset()
-        ## TODO ##
+        ## <TODO ##
         # ...
-        for _ in range(args.test_round):
+        for i in range(args.test_round):
             action = agent.select_action(state, epsilon, action_space)
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
@@ -218,6 +227,7 @@ def test(args, env, agent, writer):
                 print('Test/Episode Reward', total_reward, n_episode)
                 break
         #         ...
+        ## TODO> ##
         # raise NotImplementedError
     print('Average Reward', np.mean(rewards))
     env.close()
@@ -227,11 +237,13 @@ def main():
     ## arguments ##
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
-    parser.add_argument('-m', '--model', default='dqn.pth')
-    parser.add_argument('--logdir', default='log/dqn')
+    parser.add_argument('-m', '--model', default='dqn_2.pth')
+    parser.add_argument('-b', '--best_model', default='best_model.pth')
+    parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'dqn'))
     # train
     parser.add_argument('--warmup', default=10000, type=int)
     # parser.add_argument('--warmup', default=1, type=int)
+    # parser.add_argument('--episode', default=3200, type=int)
     parser.add_argument('--episode', default=1200, type=int)
     parser.add_argument('--capacity', default=10000, type=int)
     parser.add_argument('--batch_size', default=128, type=int)
@@ -244,8 +256,10 @@ def main():
     # test
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--render', action='store_true')
+    # parser.add_argument('--seed', default=20220828, type=int)
     parser.add_argument('--seed', default=20200519, type=int)
-    parser.add_argument('--test_epsilon', default=.001, type=float)
+    parser.add_argument('--test_epsilon', default=0.0, type=float)
+    # parser.add_argument('--test_epsilon', default=.001, type=float)
     parser.add_argument('--test_round', default=1000, type=int)
     args = parser.parse_args()
 
@@ -255,8 +269,9 @@ def main():
     writer = SummaryWriter(args.logdir)
     if not args.test_only:
         train(args, env, agent, writer)
-        agent.save(args.model)
-    agent.load(args.model)
+        agent.save(os.path.join(args.logdir, args.model))
+    # agent.load(os.path.join(args.logdir, "dqn_1.pth"))
+    agent.load(os.path.join(args.logdir, args.model))
     test(args, env, agent, writer)
 
 

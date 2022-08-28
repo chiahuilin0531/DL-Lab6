@@ -4,6 +4,7 @@ __copyright__ = 'Copyright 2020, NCTU CGI Lab'
 import argparse
 from collections import deque
 import itertools
+import os
 import random
 import time
 
@@ -11,6 +12,7 @@ import gym
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -38,19 +40,37 @@ class ReplayMemory:
 
     def sample(self, batch_size, device):
         '''sample a batch of transition tensors'''
-        ## TODO ##
-        raise NotImplementedError
+        ## <TODO ##
+        transitions = random.sample(self.buffer, batch_size)
+        l = []
+        for trans in transitions:
+            l.append(torch.FloatTensor(trans, device=device))
+        return tuple(l)
+        ## TODO> ##
+        # raise NotImplementedError
 
 
 class ActorNet(nn.Module):
     def __init__(self, state_dim=8, action_dim=2, hidden_dim=(400, 300)):
         super().__init__()
-        ## TODO ##
-        raise NotImplementedError
+        ## <TODO ##
+        hd0, hd1 = hidden_dim
+        self.main = nn.Sequential(
+            nn.Linear(state_dim, hd0, bias=True),
+            nn.ReLU(),
+            nn.Linear(hd0, hd1, bias=True),
+            nn.ReLU(),
+            nn.Linear(hd1, action_dim),
+            nn.Tanh()
+        )
+        ## TODO> ##
+        # raise NotImplementedError
 
     def forward(self, x):
-        ## TODO ##
-        raise NotImplementedError
+        ## <TODO ##
+        return self.main(x)
+        ## TODO> ##
+        # raise NotImplementedError
 
 
 class CriticNet(nn.Module):
@@ -83,10 +103,11 @@ class DDPG:
         # initialize target network
         self._target_actor_net.load_state_dict(self._actor_net.state_dict())
         self._target_critic_net.load_state_dict(self._critic_net.state_dict())
-        ## TODO ##
-        # self._actor_opt = ?
-        # self._critic_opt = ?
-        raise NotImplementedError
+        ## <TODO ##
+        self._actor_opt = optim.Adam(self._actor_net.parameters(), lr=args.lra)
+        self._critic_opt = optim.Adam(self._critic_net.parameters(), lr=args.lrc)
+        ## TODO> ##
+        # raise NotImplementedError
         # action noise
         self._action_noise = GaussianNoise(dim=2)
         # memory
@@ -100,8 +121,13 @@ class DDPG:
 
     def select_action(self, state, noise=True):
         '''based on the behavior (actor) network and exploration noise'''
-        ## TODO ##
-        raise NotImplementedError
+         ## <TODO ##
+        state = torch.tensor(state.reshape(1, -1)).to(self.device)
+        state = self._actor_net(state)
+        action = state + float(noise) * torch.normal(0, 1, state.size()).to(state.device)
+        return np.array(action.detach().cpu()).squeeze()
+         ## TODO> ##
+        # raise NotImplementedError
 
     def append(self, state, action, reward, next_state, done):
         self._memory.append(state, action, [reward / 100], next_state,
@@ -249,9 +275,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
     parser.add_argument('-m', '--model', default='ddpg.pth')
-    parser.add_argument('--logdir', default='log/ddpg')
+    parser.add_argument('-b', '--best_model', default='best_model.pth')
+    parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'ddpg'))
     # train
-    parser.add_argument('--warmup', default=10000, type=int)
+    parser.add_argument('--warmup', default=1, type=int)
+    # parser.add_argument('--warmup', default=10000, type=int)
     parser.add_argument('--episode', default=1200, type=int)
     parser.add_argument('--batch_size', default=64, type=int)
     parser.add_argument('--capacity', default=500000, type=int)
@@ -262,7 +290,9 @@ def main():
     # test
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--render', action='store_true')
+    # parser.add_argument('--seed', default=20220828, type=int)
     parser.add_argument('--seed', default=20200519, type=int)
+    parser.add_argument('--test_round', default=1000, type=int)
     args = parser.parse_args()
 
     ## main ##
