@@ -34,6 +34,7 @@ class ReplayMemory:
         transitions = random.sample(self.buffer, batch_size)
         return (torch.tensor(x, dtype=torch.float, device=device)
                 for x in zip(*transitions))
+        # raise NotImplementedError
 
 
 class Net(nn.Module):
@@ -237,8 +238,8 @@ def main():
     ## arguments ##
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
-    parser.add_argument('-m', '--model', default='dqn_2.pth')
-    parser.add_argument('-b', '--best_model', default='best_model.pth')
+    parser.add_argument('-m', '--model', default='dqn_3.pth')
+    parser.add_argument('-b', '--best_model', default='best_model_3.pth')
     parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'dqn'))
     # train
     parser.add_argument('--warmup', default=10000, type=int)

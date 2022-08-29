@@ -42,10 +42,8 @@ class ReplayMemory:
         '''sample a batch of transition tensors'''
         ## <TODO ##
         transitions = random.sample(self.buffer, batch_size)
-        l = []
-        for trans in transitions:
-            l.append(torch.FloatTensor(trans, device=device))
-        return tuple(l)
+        return (torch.tensor(x, dtype=torch.float, device=device)
+                for x in zip(*transitions))
         ## TODO> ##
         # raise NotImplementedError
 
@@ -106,6 +104,8 @@ class DDPG:
         ## <TODO ##
         self._actor_opt = optim.Adam(self._actor_net.parameters(), lr=args.lra)
         self._critic_opt = optim.Adam(self._critic_net.parameters(), lr=args.lrc)
+
+        self.criterion = nn.MSELoss(reduction='mean')
         ## TODO> ##
         # raise NotImplementedError
         # action noise
@@ -123,8 +123,8 @@ class DDPG:
         '''based on the behavior (actor) network and exploration noise'''
          ## <TODO ##
         state = torch.tensor(state.reshape(1, -1)).to(self.device)
-        state = self._actor_net(state)
-        action = state + float(noise) * torch.normal(0, 1, state.size()).to(state.device)
+        action = self._actor_net(state)[0]
+        action = action + float(noise) * torch.normal(0, 1, action.size()).to(state.device)
         return np.array(action.detach().cpu()).squeeze()
          ## TODO> ##
         # raise NotImplementedError
@@ -152,15 +152,16 @@ class DDPG:
 
         ## update critic ##
         # critic loss
-        ## TODO ##
-        # q_value = ?
-        # with torch.no_grad():
-        #    a_next = ?
-        #    q_next = ?
-        #    q_target = ?
-        # criterion = ?
-        # critic_loss = criterion(q_value, q_target)
-        raise NotImplementedError
+        ## <TODO ##
+        q_value = critic_net(state, action)
+        with torch.no_grad():
+            a_next = target_actor_net(next_state)
+            q_next = target_critic_net(state, a_next)
+            q_target = reward + gamma * q_next * (1-done)
+
+        critic_loss = self.criterion(q_value, q_target)
+        ## TODO> ##
+        # raise NotImplementedError
         # optimize critic
         actor_net.zero_grad()
         critic_net.zero_grad()
@@ -170,9 +171,9 @@ class DDPG:
         ## update actor ##
         # actor loss
         ## TODO ##
-        # action = ?
-        # actor_loss = ?
-        raise NotImplementedError
+        action = actor_net(state)
+        actor_loss = -torch.mean(critic_net(state, action))
+        # raise NotImplementedError
         # optimize actor
         actor_net.zero_grad()
         critic_net.zero_grad()
@@ -183,8 +184,10 @@ class DDPG:
     def _update_target_network(target_net, net, tau):
         '''update target network by _soft_ copying from behavior network'''
         for target, behavior in zip(target_net.parameters(), net.parameters()):
-            ## TODO ##
-            raise NotImplementedError
+            ## <TODO ##
+            target.data.copy_(tau * behavior.data + (1.0-tau) * target.data)
+            ## TODO> ##
+            # raise NotImplementedError
 
     def save(self, model_path, checkpoint=False):
         if checkpoint:
@@ -219,6 +222,7 @@ def train(args, env, agent, writer):
     print('Start Training')
     total_steps = 0
     ewma_reward = 0
+    best_reward = -np.inf
     for episode in range(args.episode):
         total_reward = 0
         state = env.reset()
@@ -227,7 +231,7 @@ def train(args, env, agent, writer):
             if total_steps < args.warmup:
                 action = env.action_space.sample()
             else:
-                action = agent.select_action(state)
+                action = agent.select_action(state, True)
             # execute action
             next_state, reward, done, _ = env.step(action)
             # store transition
@@ -249,6 +253,13 @@ def train(args, env, agent, writer):
                     .format(total_steps, episode, t, total_reward,
                             ewma_reward))
                 break
+        
+        if total_steps >= args.warmup:
+            if best_reward < total_reward:
+                best_reward = total_reward
+                agent.save(os.path.join(args.logdir, args.best_model))
+            
+    print("best reward:", best_reward)
     env.close()
 
 
@@ -262,10 +273,17 @@ def test(args, env, agent, writer):
         state = env.reset()
         ## TODO ##
         # ...
-        #     if done:
-        #         writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
-        #         ...
-        raise NotImplementedError
+        for i in range(args.test_round):
+            action = agent.select_action(state, False)
+            next_state, reward, done, _ = env.step(action)
+            total_reward += reward
+            state = next_state
+            if done:
+                rewards.append(total_reward)
+                writer.add_scalar('Test/Episode Reward', total_reward, n_episode)
+                print('Test/Episode Reward', total_reward, n_episode)
+                break
+        # raise NotImplementedError
     print('Average Reward', np.mean(rewards))
     env.close()
 
@@ -274,12 +292,12 @@ def main():
     ## arguments ##
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
-    parser.add_argument('-m', '--model', default='ddpg.pth')
-    parser.add_argument('-b', '--best_model', default='best_model.pth')
+    parser.add_argument('-m', '--model', default='ddpg_1.pth')
+    parser.add_argument('-b', '--best_model', default='best_model_2.pth')
     parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'ddpg'))
     # train
-    parser.add_argument('--warmup', default=1, type=int)
-    # parser.add_argument('--warmup', default=10000, type=int)
+    # parser.add_argument('--warmup', default=1, type=int)
+    parser.add_argument('--warmup', default=10000, type=int)
     parser.add_argument('--episode', default=1200, type=int)
     parser.add_argument('--batch_size', default=64, type=int)
     parser.add_argument('--capacity', default=500000, type=int)
@@ -290,8 +308,11 @@ def main():
     # test
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--render', action='store_true')
+    parser.add_argument('--seed', default=19861120, type=int)
+    # parser.add_argument('--seed', default=20000412, type=int)
+    # parser.add_argument('--seed', default=20000531, type=int)
     # parser.add_argument('--seed', default=20220828, type=int)
-    parser.add_argument('--seed', default=20200519, type=int)
+    # parser.add_argument('--seed', default=20200519, type=int)
     parser.add_argument('--test_round', default=1000, type=int)
     args = parser.parse_args()
 
@@ -301,8 +322,8 @@ def main():
     writer = SummaryWriter(args.logdir)
     if not args.test_only:
         train(args, env, agent, writer)
-        agent.save(args.model)
-    agent.load(args.model)
+        agent.save(os.path.join(args.logdir, args.model))
+    agent.load(os.path.join(args.logdir, args.model))
     test(args, env, agent, writer)
 
 
