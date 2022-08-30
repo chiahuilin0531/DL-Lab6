@@ -150,30 +150,32 @@ class DDPG:
         state, action, reward, next_state, done = self._memory.sample(
             self.batch_size, self.device)
 
+        ## <TODO ##
         ## update critic ##
         # critic loss
-        ## <TODO ##
         q_value = critic_net(state, action)
         with torch.no_grad():
             a_next = target_actor_net(next_state)
-            q_next = target_critic_net(state, a_next)
+            q_next = target_critic_net(next_state, a_next)
             q_target = reward + gamma * q_next * (1-done)
 
         critic_loss = self.criterion(q_value, q_target)
         ## TODO> ##
         # raise NotImplementedError
+
         # optimize critic
         actor_net.zero_grad()
         critic_net.zero_grad()
         critic_loss.backward()
         critic_opt.step()
 
+        ## TODO ##
         ## update actor ##
         # actor loss
-        ## TODO ##
         action = actor_net(state)
         actor_loss = -torch.mean(critic_net(state, action))
         # raise NotImplementedError
+
         # optimize actor
         actor_net.zero_grad()
         critic_net.zero_grad()
@@ -292,8 +294,8 @@ def main():
     ## arguments ##
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
-    parser.add_argument('-m', '--model', default='ddpg_1.pth')
-    parser.add_argument('-b', '--best_model', default='best_model_2.pth')
+    parser.add_argument('-m', '--model', default='ddpg_3.pth')
+    parser.add_argument('-b', '--best_model', default='best_model_3.pth')
     parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'ddpg'))
     # train
     # parser.add_argument('--warmup', default=1, type=int)
@@ -308,8 +310,8 @@ def main():
     # test
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--render', action='store_true')
-    parser.add_argument('--seed', default=19861120, type=int)
-    # parser.add_argument('--seed', default=20000412, type=int)
+    # parser.add_argument('--seed', default=19861120, type=int)
+    parser.add_argument('--seed', default=20000412, type=int)
     # parser.add_argument('--seed', default=20000531, type=int)
     # parser.add_argument('--seed', default=20220828, type=int)
     # parser.add_argument('--seed', default=20200519, type=int)

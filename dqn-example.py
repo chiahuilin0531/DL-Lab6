@@ -34,7 +34,6 @@ class ReplayMemory:
         transitions = random.sample(self.buffer, batch_size)
         return (torch.tensor(x, dtype=torch.float, device=device)
                 for x in zip(*transitions))
-        # raise NotImplementedError
 
 
 class Net(nn.Module):
@@ -79,6 +78,7 @@ class DQN:
         self.gamma = args.gamma
         self.freq = args.freq
         self.target_freq = args.target_freq
+        self.ddqn = not args.original_dqn
 
     def select_action(self, state, epsilon, action_space):
         '''epsilon-greedy based on behavior network'''
@@ -108,15 +108,21 @@ class DQN:
         # sample a minibatch of transitions
         state, action, reward, next_state, done = self._memory.sample(
             self.batch_size, self.device)
-        
-        batch_size = state.shape[0]
 
         ## <TODO ##
         q_value = self._behavior_net(state).gather(1, action.long())
         
-        with torch.no_grad():
-           q_next = self._target_net(next_state).detach()
-           q_target = reward + gamma * q_next.max(1, True)[0] * (1-done)
+        if self.ddqn:
+            maxq_a = self._behavior_net(next_state).argmax(1, True)
+            with torch.no_grad():
+                q_next = self._target_net(next_state).gather(1, maxq_a)
+                q_target = reward + gamma * q_next * (1-done)
+
+        else:
+            with torch.no_grad():
+                q_next = self._target_net(next_state).detach()
+                q_target = reward + gamma * q_next.max(1, True)[0] * (1-done)
+
         loss = self.criterion(q_value, q_target)
         ## TODO> ##
 
@@ -128,11 +134,16 @@ class DQN:
         nn.utils.clip_grad_norm_(self._behavior_net.parameters(), 5)
         self._optimizer.step()
 
-    def _update_target_network(self):
-        '''update target network by copying from behavior network'''
-        ## <TODO ##
-        self._target_net.load_state_dict(self._behavior_net.state_dict())
-        ## TODO> ##
+    def _update_target_network(self, softcopy=False, tau = .005):
+        if softcopy:
+            '''update target network by _soft_ copying from behavior network'''
+            for target, behavior in zip(self._target_net.parameters(), 
+                                        self._behavior_net.parameters()):
+                target.data.copy_(tau * behavior.data + (1.0-tau) * target.data)
+        else:
+            '''update target network by copying from behavior network'''
+            self._target_net.load_state_dict(self._behavior_net.state_dict())
+        
         # raise NotImplementedError
 
     def save(self, model_path, checkpoint=False):
@@ -185,9 +196,9 @@ def train(args, env, agent, writer):
             if done:
                 ewma_reward = 0.05 * total_reward + (1 - 0.05) * ewma_reward
                 writer.add_scalar('Train/Episode Reward', total_reward,
-                                  total_steps)
+                                  episode)
                 writer.add_scalar('Train/Ewma Reward', ewma_reward,
-                                  total_steps)
+                                  episode)
                 print(
                     'Step: {}\tEpisode: {}\tLength: {:3d}\tTotal reward: {:.2f}\tEwma reward: {:.2f}\tEpsilon: {:.3f}'
                     .format(total_steps, episode, t, total_reward, ewma_reward,
@@ -238,13 +249,13 @@ def main():
     ## arguments ##
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--device', default='cuda')
-    parser.add_argument('-m', '--model', default='dqn_3.pth')
-    parser.add_argument('-b', '--best_model', default='best_model_3.pth')
+    parser.add_argument('-m', '--model', default='ddqn_5.pth')
+    parser.add_argument('-b', '--best_model', default='best_model_dd.pth')
     parser.add_argument('--logdir', default=os.path.join('Lab6', 'log', 'dqn'))
     # train
+    parser.add_argument('--original_dqn', action='store_true')
     parser.add_argument('--warmup', default=10000, type=int)
     # parser.add_argument('--warmup', default=1, type=int)
-    # parser.add_argument('--episode', default=3200, type=int)
     parser.add_argument('--episode', default=1200, type=int)
     parser.add_argument('--capacity', default=10000, type=int)
     parser.add_argument('--batch_size', default=128, type=int)
@@ -259,8 +270,7 @@ def main():
     parser.add_argument('--render', action='store_true')
     # parser.add_argument('--seed', default=20220828, type=int)
     parser.add_argument('--seed', default=20200519, type=int)
-    parser.add_argument('--test_epsilon', default=0.0, type=float)
-    # parser.add_argument('--test_epsilon', default=.001, type=float)
+    parser.add_argument('--test_epsilon', default=.001, type=float)
     parser.add_argument('--test_round', default=1000, type=int)
     args = parser.parse_args()
 
